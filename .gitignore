@@ -1,3 +1,4 @@
+.vscode
 *.dSYM
-ping
+ft_ping
 .objs

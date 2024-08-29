@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:56 by mgama             #+#    #+#             */
-/*   Updated: 2024/07/20 19:13:43 by mgama            ###   ########.fr       */
+/*   Updated: 2024/08/29 19:19:59 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,6 +18,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <string.h>
+#include <stdbool.h>
+#include <errno.h>
+#include <signal.h>
+#include <err.h>
+#include <math.h>
+#include <sysexits.h>
+#include <ifaddrs.h>
 
 #include <sys/cdefs.h>
 #include <sys/types.h>
@@ -30,7 +38,9 @@
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/ip_var.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <net/if.h>
 
 #define F_VERBOSE		0x001
