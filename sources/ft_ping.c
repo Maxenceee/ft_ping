@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/10/20 14:42:00 by mgama            ###   ########.fr       */
+/*   Updated: 2025/10/20 14:45:19 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -148,7 +148,7 @@ void pinger()
 {
 	struct timeval now;
 	struct tv32 tv32;
-	int cc, i;
+	int cc;
 	struct icmp icmp;
 
 	icmp.icmp_type = ICMP_ECHO;
@@ -180,10 +180,10 @@ void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 {
 	struct ip *ip;
 	struct icmp *icmp;
-	struct timeval now;
 	double rtt;
 	const void *tp;
-	int dupflag, hlen, i, j, recv_len, seq;
+	int hlen, seq;
+	uint32_t recv_len;
 
 	ip = (struct ip *)buff;
 	hlen = ip->ip_hl << 2;
@@ -215,7 +215,7 @@ void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 #endif
 		tp = (const char *)tp;
 
-		if (rcv - ICMP_MINLEN >= sizeof(tv1))
+		if (recv_len - ICMP_MINLEN >= sizeof(tv1))
 		{
 			memcpy(&tv32, tp, sizeof(tv32));
 			tv1.tv_sec = ntohl(tv32.tv32_sec);
@@ -245,7 +245,7 @@ void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 	}
 }
 
-void stop(int sig)
+void stop(int sig __unused)
 {
 	if (finish_up)
 		_exit(nreceived ? 0 : 2);
@@ -257,7 +257,6 @@ int main(int ac, char **av)
 	char	v;
 	char	*target;
 	int		hold;
-	struct ip *ip;
 	struct iovec iov;
 	struct sockaddr_in *to;
 	struct sockaddr_in from, sock_in;
@@ -265,6 +264,10 @@ int main(int ac, char **av)
 	struct sigaction si_sa;
 	struct timeval last, intvl;
 	struct msghdr msg;
+
+	bzero(&to, sizeof(to));
+	bzero(&from, sizeof(from));
+	bzero(&sock_in, sizeof(sock_in));
 
 	while ((v = getopt(ac, av, "c:DdhrVv")) !=  -1)
 	{
@@ -384,8 +387,6 @@ int main(int ac, char **av)
 
 	intvl.tv_sec = interval / 1000;
 	intvl.tv_usec = interval % 1000 * 1000;
-
-	int almost_done = 0;
 
 	while (!finish_up)
 	{
