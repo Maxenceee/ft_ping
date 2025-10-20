@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/10/20 15:15:10 by mgama            ###   ########.fr       */
+/*   Updated: 2025/10/20 15:25:20 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -268,7 +268,7 @@ int main(int ac, char **av)
 	char	*target, *ep;
 	int		hold, ttl, tos, mib[4];
 	struct iovec iov;
-	struct sockaddr_in to;
+	struct sockaddr_in *to;
 	struct sockaddr_in from;
 	struct ip *ip;
 	struct hostent *hosts;
@@ -345,9 +345,10 @@ int main(int ac, char **av)
 	uid = getuid();
 
 	bzero(&target_addr, sizeof(target_addr));
-	to.sin_family = AF_INET;
-	to.sin_len = sizeof(target_addr);
-	if (inet_aton(target, &target_addr.sin_addr) != 0)
+	to = &target_addr;
+	to->sin_family = AF_INET;
+	to->sin_len = sizeof(*to);
+	if (inet_aton(target, &to->sin_addr) != 0)
 	{
 		hostname = target;
 	}
@@ -359,12 +360,12 @@ int main(int ac, char **av)
 			perror("gethostbyname2");
 			exit(1);
 		}
-		if ((unsigned)hosts->h_length > sizeof(target_addr.sin_addr))
+		if ((unsigned)hosts->h_length > sizeof(to->sin_addr))
 		{
 			fprintf(stderr, "gethostbyname2: address too long\n");
 			exit(1);
 		}
-		memcpy(&target_addr.sin_addr, hosts->h_addr, sizeof(target_addr.sin_addr));
+		memcpy(&to->sin_addr, hosts->h_addr, sizeof(to->sin_addr));
 		hostname = hosts->h_name;
 	}
 
@@ -400,11 +401,11 @@ int main(int ac, char **av)
 		ip->ip_hl = sizeof(struct ip) >> 2;
 		ip->ip_tos = tos;
 		ip->ip_id = 0;
-		ip->ip_off = 0;
+		ip->ip_off = IP_DF;
 		ip->ip_ttl = ttl;
 		ip->ip_p = IPPROTO_ICMP;
 		ip->ip_src.s_addr = INADDR_ANY;
-		ip->ip_dst = to.sin_addr;
+		ip->ip_dst = to->sin_addr;
     }
 
 	ident = getpid() & 0xFFFF;
