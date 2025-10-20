@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/10/20 14:45:19 by mgama            ###   ########.fr       */
+/*   Updated: 2025/10/20 15:15:10 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,8 +20,9 @@ int interval = 1000; // 1 second
 char *hostname;
 struct sockaddr_in target_addr;
 int datalen = 56;
-uint8_t packet[IP_MAXPACKET] __attribute__((aligned(4)));
+u_char outpackhdr[IP_MAXPACKET], *outpack;
 
+long npackets;
 long nmissedmax;
 
 volatile sig_atomic_t finish_up;
@@ -46,10 +47,7 @@ void	usage(void)
 	(void)fprintf(stderr, "Options:\n");
 	(void)fprintf(stderr, "  <destination>      dns name or ip address\n");
 	(void)fprintf(stderr, "  -c <count>         stop after <count> replies\n");
-	(void)fprintf(stderr, "  -D                 print timestamps\n");
-	(void)fprintf(stderr, "  -d                 use SO_DEBUG socket option\n");
 	(void)fprintf(stderr, "  -h                 print help and exit\n");
-	(void)fprintf(stderr, "  -r                 use SO_DONTROUTE socket option\n");
 	(void)fprintf(stderr, "  -V                 print version and exit\n");
 	(void)fprintf(stderr, "  -v                 verbose output\n");
 	exit(64);
@@ -149,26 +147,38 @@ void pinger()
 	struct timeval now;
 	struct tv32 tv32;
 	int cc;
-	struct icmp icmp;
+	struct ip *ip;
+	struct icmp *icp;
+	u_char *packet;
 
-	icmp.icmp_type = ICMP_ECHO;
-	icmp.icmp_code = 0;
-	icmp.icmp_cksum = 0;
-	icmp.icmp_seq = htons(ntransmitted);
-	icmp.icmp_id = ident;
+	packet = outpack;
+	icp = (struct icmp *)outpack;
+	icp->icmp_type = ICMP_ECHO;
+	icp->icmp_code = 0;
+	icp->icmp_cksum = 0;
+	icp->icmp_seq = htons(ntransmitted);
+	icp->icmp_id = ident;
 
 	(void)gettimeofday(&now, NULL);
 
 	tv32.tv32_sec = htonl(now.tv_sec);
 	tv32.tv32_usec = htonl(now.tv_usec);
 
-	bcopy((void *)&tv32, (void *)&icmp.icmp_data, sizeof(tv32));
+	bcopy((void *)&tv32, (void *)&outpack[ICMP_MINLEN], sizeof(tv32));
 
 	cc = ICMP_MINLEN + datalen;
 
-	icmp.icmp_cksum = in_cksum((u_short *)&icmp, cc);
+	icp->icmp_cksum = in_cksum((u_short *)icp, cc);
 
-	if (sendto(sockfd, (char *)&icmp, cc, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
+	if (options & F_HDRINCL) {
+		cc += sizeof(struct ip);
+		ip = (struct ip *)outpackhdr;
+		ip->ip_len = cc;
+		ip->ip_sum = in_cksum((u_short *)outpackhdr, cc);
+		packet = outpackhdr;
+	}
+
+	if (sendto(sockfd, (char *)packet, cc, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
 		perror("sendto");
 		return;
 	}
@@ -255,35 +265,44 @@ void stop(int sig __unused)
 int main(int ac, char **av)
 {
 	char	v;
-	char	*target;
-	int		hold;
+	char	*target, *ep;
+	int		hold, ttl, tos, mib[4];
 	struct iovec iov;
-	struct sockaddr_in *to;
-	struct sockaddr_in from, sock_in;
+	struct sockaddr_in to;
+	struct sockaddr_in from;
+	struct ip *ip;
 	struct hostent *hosts;
 	struct sigaction si_sa;
 	struct timeval last, intvl;
 	struct msghdr msg;
+	u_long ultmp;
+	u_char packet[IP_MAXPACKET] __attribute__((aligned(4)));
 
-	bzero(&to, sizeof(to));
-	bzero(&from, sizeof(from));
-	bzero(&sock_in, sizeof(sock_in));
-
-	while ((v = getopt(ac, av, "c:DdhrVv")) !=  -1)
+	outpack = outpackhdr + sizeof(struct ip);
+	while ((v = getopt(ac, av, "c:dhom:Vvz:")) !=  -1)
 	{
 		switch (v)
 		{
 		case 'c':
-			options |= F_COUNT;
-			break;
-		case 'D':
-			options |= F_TIMESTAMP;
+			ultmp = strtoul(optarg, &ep, 0);
+			if (*ep || ep == optarg || ultmp > LONG_MAX || !ultmp)
+				errx(EX_USAGE,
+				    "invalid count of packets to transmit: `%s'",
+				    optarg);
+			npackets = ultmp;
 			break;
 		case 'd':
 			options |= F_SO_DEBUG;
 			break;
-		case 'r':
-			options |= F_SO_DONTROUTE;
+		case 'o':
+			options |= F_ONCE;
+			break;
+		case 'm':
+			ultmp = strtoul(optarg, &ep, 0);
+			if (*ep || ep == optarg || ultmp > MAXTTL)
+				errx(EX_USAGE, "invalid TTL: `%s'", optarg);
+			ttl = ultmp;
+			options |= F_TTL;
 			break;
 		case 'V':
 			printf("ft_ping v%.1f\n", PG_VERSION);
@@ -291,6 +310,13 @@ int main(int ac, char **av)
 			break;
 		case 'v':
 			options |= F_VERBOSE;
+			break;
+		case 'z':
+			options |= F_HDRINCL;
+			ultmp = strtoul(optarg, &ep, 0);
+			if (*ep || ep == optarg || ultmp > MAXTOS)
+				errx(EX_USAGE, "invalid TOS: `%s'", optarg);
+			tos = ultmp;
 			break;
 		default:
 			usage();
@@ -319,8 +345,8 @@ int main(int ac, char **av)
 	uid = getuid();
 
 	bzero(&target_addr, sizeof(target_addr));
-	to->sin_family = AF_INET;
-	to->sin_len = sizeof(target_addr);
+	to.sin_family = AF_INET;
+	to.sin_len = sizeof(target_addr);
 	if (inet_aton(target, &target_addr.sin_addr) != 0)
 	{
 		hostname = target;
@@ -346,6 +372,40 @@ int main(int ac, char **av)
 	(void)setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &hold, sizeof(hold));
 	if (uid == 0)
 		(void)setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (char *)&hold, sizeof(hold));
+
+	if (options & F_SO_DEBUG)
+		(void)setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (char *)&hold,
+		    sizeof(hold));
+
+	if (options & F_TTL) {
+		if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl,
+		    sizeof(ttl)) < 0) {
+			err(EX_OSERR, "setsockopt IP_TTL");
+		}
+	}
+
+	if (options & F_HDRINCL) {
+		ip = (struct ip*)outpackhdr;
+		if (!(options & (F_TTL))) {
+			mib[0] = CTL_NET;
+			mib[1] = PF_INET;
+			mib[2] = IPPROTO_IP;
+			mib[3] = IPCTL_DEFTTL;
+			size_t sz = sizeof(ttl);
+			if (sysctl(mib, 4, &ttl, &sz, NULL, 0) == -1)
+				err(1, "sysctl(net.inet.ip.ttl)");
+		}
+		setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, &hold, sizeof(hold));
+		ip->ip_v = IPVERSION;
+		ip->ip_hl = sizeof(struct ip) >> 2;
+		ip->ip_tos = tos;
+		ip->ip_id = 0;
+		ip->ip_off = 0;
+		ip->ip_ttl = ttl;
+		ip->ip_p = IPPROTO_ICMP;
+		ip->ip_src.s_addr = INADDR_ANY;
+		ip->ip_dst = to.sin_addr;
+    }
 
 	ident = getpid() & 0xFFFF;
 	
@@ -429,6 +489,8 @@ int main(int ac, char **av)
 				tv = &now;
 			}
 			receiver((char *)packet, rcv, &from, tv);
+			if ((options & F_ONCE && nreceived) || (npackets && nreceived >= npackets))
+				break;
 		}
 		if (n == 0)
 		{

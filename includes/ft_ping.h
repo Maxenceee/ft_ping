@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:56 by mgama             #+#    #+#             */
-/*   Updated: 2025/10/20 14:20:49 by mgama            ###   ########.fr       */
+/*   Updated: 2025/10/20 15:08:21 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -33,6 +33,7 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/sysctl.h>
 #include <sys/uio.h>
 
 #include <netinet/in.h>
@@ -44,13 +45,16 @@
 #include <netdb.h>
 #include <net/if.h>
 
-#define F_VERBOSE		0x001
-#define F_COUNT			0x002
-#define F_TIMESTAMP		0x004
-
-#define F_SO_DEBUG		0x100
-#define F_SO_DONTROUTE	0x200
+#define F_VERBOSE		0x0001
+#define F_COUNT			0x0002
+#define F_TIMESTAMP		0x0004
+#define	F_SO_DEBUG		0x0010
+#define	F_TTL			0x0100
+#define	F_ONCE			0x0200
+#define	F_HDRINCL		0x0400
 
 #define PG_VERSION 1.0
+
+#define MAXTOS 255
 
 #endif /* FT_PING */
