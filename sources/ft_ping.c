@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2024/08/29 19:22:16 by mgama            ###   ########.fr       */
+/*   Updated: 2025/10/20 14:42:00 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -15,13 +15,21 @@
 int uid;
 int ident;
 int options;
-bool finish = false;
 int sockfd;
 int interval = 1000; // 1 second
 char *hostname;
 struct sockaddr_in target_addr;
 int datalen = 56;
 uint8_t packet[IP_MAXPACKET] __attribute__((aligned(4)));
+
+long nmissedmax;
+
+volatile sig_atomic_t finish_up;
+
+double tmin = 999999999.0;
+double tmax = 0.0;
+double tsum = 0.0;
+double tsumsq = 0.0;
 
 struct tv32 {
 	u_int32_t tv32_sec;
@@ -101,8 +109,45 @@ tvsub(struct timeval *out, const struct timeval *in)
 	out->tv_sec -= in->tv_sec;
 }
 
+static void
+finish(void)
+{
+
+	(void)signal(SIGINT, SIG_IGN);
+	(void)signal(SIGALRM, SIG_IGN);
+	(void)putchar('\n');
+	(void)fflush(stdout);
+	(void)printf("--- %s ping statistics ---\n", hostname);
+	(void)printf("%ld packets transmitted, ", ntransmitted);
+	(void)printf("%ld packets received, ", nreceived);
+	if (ntransmitted) {
+		if (nreceived > ntransmitted)
+			(void)printf("-- somebody's printing up packets!");
+		else
+			(void)printf("%.1f%% packet loss",
+			    ((ntransmitted - nreceived) * 100.0) /
+			    ntransmitted);
+	}
+	(void)putchar('\n');
+	if (nreceived) {
+		double n = nreceived;
+		double avg = tsum / n;
+		double vari = tsumsq / n - avg * avg;
+		(void)printf(
+		    "round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n",
+		    tmin, avg, tmax, sqrt(vari));
+	}
+
+	if (nreceived)
+		exit(0);
+	else
+		exit(2);
+}
+
 void pinger()
 {
+	struct timeval now;
+	struct tv32 tv32;
 	int cc, i;
 	struct icmp icmp;
 
@@ -112,9 +157,16 @@ void pinger()
 	icmp.icmp_seq = htons(ntransmitted);
 	icmp.icmp_id = ident;
 
-	icmp.icmp_cksum = in_cksum((u_short *)&icmp, cc);
+	(void)gettimeofday(&now, NULL);
+
+	tv32.tv32_sec = htonl(now.tv_sec);
+	tv32.tv32_usec = htonl(now.tv_usec);
+
+	bcopy((void *)&tv32, (void *)&icmp.icmp_data, sizeof(tv32));
 
 	cc = ICMP_MINLEN + datalen;
+
+	icmp.icmp_cksum = in_cksum((u_short *)&icmp, cc);
 
 	if (sendto(sockfd, (char *)&icmp, cc, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
 		perror("sendto");
@@ -168,8 +220,16 @@ void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 			memcpy(&tv32, tp, sizeof(tv32));
 			tv1.tv_sec = ntohl(tv32.tv32_sec);
 			tv1.tv_usec = ntohl(tv32.tv32_usec);
+
 			tvsub(tv, &tv1);
 			rtt = ((double)tv->tv_sec) * 1000.0 + ((double)tv->tv_usec) / 1000.0;
+
+			tsum += rtt;
+			tsumsq += rtt * rtt;
+			if (rtt < tmin)
+				tmin = rtt;
+			if (rtt > tmax)
+				tmax = rtt;
 		}
 
 		seq = ntohs(icmp->icmp_seq);
@@ -187,7 +247,9 @@ void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 
 void stop(int sig)
 {
-	finish = true;
+	if (finish_up)
+		_exit(nreceived ? 0 : 2);
+	finish_up = 1;
 }
 
 int main(int ac, char **av)
@@ -323,7 +385,9 @@ int main(int ac, char **av)
 	intvl.tv_sec = interval / 1000;
 	intvl.tv_usec = interval % 1000 * 1000;
 
-	while (!finish)
+	int almost_done = 0;
+
+	while (!finish_up)
 	{
 		struct fd_set readfds;
 		struct timeval now, timeout;
@@ -368,9 +432,15 @@ int main(int ac, char **av)
 		if (n == 0)
 		{
 			pinger();
+
 			(void)gettimeofday(&last, NULL);
+			if (ntransmitted - nreceived - 1 > nmissedmax) {
+				nmissedmax = ntransmitted - nreceived - 1;
+				printf("Request timeout for icmp_seq %ld\n", ntransmitted - 2);
+			}
 		}
 	}
 
+	finish();
 	return (0);
 }

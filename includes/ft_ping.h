@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:56 by mgama             #+#    #+#             */
-/*   Updated: 2024/08/29 19:19:59 by mgama            ###   ########.fr       */
+/*   Updated: 2025/10/20 14:20:49 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <string.h>
+#include <strings.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <signal.h>
