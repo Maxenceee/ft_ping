@@ -1,1 +1,13 @@
 # ft_ping
+
+My **Ping** implementation for the 42 School cursus, written in C. This project is a reimplementation of the standard `ping` utility, which sends ICMP Echo Request packets to network hosts and measures the round-trip time for messages sent from the originating host to a destination computer.
+
+### Getting Started
+
+You need to compile the project with `make`.
+
+## Overview
+
+The `ft_ping` program sends ICMP Echo Request packets to a specified host and waits for ICMP Echo Reply packets. It measures the time taken for the round trip and provides statistics about the packets sent and received.
+
+The ICMP protocol is used for network diagnostics and is a core component of the Internet Protocol Suite. It is primarily used for error messages and operational information queries. The program constructs ICMP packets manually and handles raw sockets to send and receive these packets.
