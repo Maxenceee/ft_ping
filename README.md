@@ -1,6 +1,6 @@
 # ft_ping
 
-My **ft_ing** implementation for the 42 School cursus, written in C. This project is a reimplementation of the standard `ping` utility, which sends ICMP Echo Request packets to network hosts and measures the round-trip time for messages sent from the originating host to a destination computer.
+My **ft_ping** implementation for the 42 School cursus, written in C. This project is a reimplementation of the standard `ping` utility, which sends ICMP Echo Request packets to network hosts and measures the round-trip time for messages sent from the originating host to a destination computer.
 
 ### Getting Started
 
