@@ -266,7 +266,10 @@ int main(int ac, char **av)
 {
 	char	v;
 	char	*target, *ep;
-	int		hold, ttl, tos, mib[4];
+	int		hold, ttl, tos;
+#ifdef __APPLE__
+	int		mib[4];
+#endif /* __APPLE__ */
 	struct iovec iov;
 	struct sockaddr_in *to;
 	struct sockaddr_in from;
@@ -347,7 +350,9 @@ int main(int ac, char **av)
 	bzero(&target_addr, sizeof(target_addr));
 	to = &target_addr;
 	to->sin_family = AF_INET;
+#ifdef __APPLE__
 	to->sin_len = sizeof(*to);
+#endif /* __APPLE__ */
 	if (inet_aton(target, &to->sin_addr) != 0)
 	{
 		hostname = target;
@@ -388,13 +393,27 @@ int main(int ac, char **av)
 	if (options & F_HDRINCL) {
 		ip = (struct ip*)outpackhdr;
 		if (!(options & (F_TTL))) {
+#ifdef __APPLE__
+			size_t sz = sizeof(ttl);
 			mib[0] = CTL_NET;
 			mib[1] = PF_INET;
 			mib[2] = IPPROTO_IP;
 			mib[3] = IPCTL_DEFTTL;
-			size_t sz = sizeof(ttl);
+
 			if (sysctl(mib, 4, &ttl, &sz, NULL, 0) == -1)
 				err(1, "sysctl(net.inet.ip.ttl)");
+#else
+			FILE *f = fopen("/proc/sys/net/ipv4/ip_default_ttl", "r");
+			if (!f)
+				err(1, "fopen(/proc/sys/net/ipv4/ip_default_ttl)");
+
+			if (fscanf(f, "%d", &ttl) != 1) {
+				fclose(f);
+				err(1, "fscanf(/proc/sys/net/ipv4/ip_default_ttl)");
+			}
+
+			fclose(f);		
+#endif /* __APPLE__ */
 		}
 		setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, &hold, sizeof(hold));
 		ip->ip_v = IPVERSION;

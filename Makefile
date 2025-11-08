@@ -36,11 +36,11 @@ $(NAME): $(OBJS) $(OBJS_ASM)
 
 clean:
 	@echo "$(RED)Cleaning build folder$(DEFAULT)"
-	@$(RM) -r $(OBJ_DIR)
+	-@$(RM) -r $(OBJ_DIR)
 
 fclean: clean
 	@echo "$(RED)Cleaning $(NAME)$(DEFAULT)"
-	@$(RM) $(NAME)
+	-@$(RM) $(NAME)
 
 re: fclean all
 

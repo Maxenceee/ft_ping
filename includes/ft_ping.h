@@ -32,15 +32,20 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/time.h>
+#ifdef __APPLE__
 #include <sys/sysctl.h>
+#endif /* __APPLE__  */
 #include <sys/uio.h>
 
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#ifdef __APPLE__
 #include <netinet/ip_var.h>
+#endif /* __APPLE__  */
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <net/if.h>
@@ -56,5 +61,9 @@
 #define PG_VERSION 1.0
 
 #define MAXTOS 255
+
+#ifndef __APPLE__
+#define __unused __attribute__((unused))
+#endif
 
 #endif /* FT_PING */
