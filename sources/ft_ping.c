@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/10/20 15:25:20 by mgama            ###   ########.fr       */
+/*   Updated: 2025/11/08 17:22:28 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -40,7 +40,8 @@ struct tv32 {
 long ntransmitted = 0;
 long nreceived = 0;
 
-void	usage(void)
+void
+usage(void)
 {
 	(void)fprintf(stderr, "Usage\n");
 	(void)fprintf(stderr, "  ft_ping [options] <destination>");
@@ -53,10 +54,6 @@ void	usage(void)
 	exit(64);
 }
 
-/*
- * in_cksum --
- *	Checksum routine for Internet Protocol family headers (C Version)
- */
 u_short
 in_cksum(u_short *addr, int len)
 {
@@ -72,28 +69,49 @@ in_cksum(u_short *addr, int len)
 	sum = 0;
 	w = addr;
 
-	/*
-	 * Our algorithm is simple, using a 32 bit accumulator (sum), we add
-	 * sequential 16 bit words to it, and at the end, fold back all the
-	 * carry bits from the top 16 bits into the lower 16 bits.
-	 */
 	while (nleft > 1)  {
 		sum += *w++;
 		nleft -= 2;
 	}
 
-	/* mop up an odd byte, if necessary */
 	if (nleft == 1) {
 		last.uc[0] = *(u_char *)w;
 		last.uc[1] = 0;
 		sum += last.us;
 	}
 
-	/* add back carry outs from top 16 bits to low 16 bits */
-	sum = (sum >> 16) + (sum & 0xffff);	/* add hi 16 to low 16 */
-	sum += (sum >> 16);			/* add carry */
-	answer = ~sum;				/* truncate to 16 bits */
+	sum = (sum >> 16) + (sum & 0xffff);
+	sum += (sum >> 16);
+	answer = ~sum;
 	return(answer);
+}
+
+void
+printrname(struct sockaddr *sa)
+{
+	char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+	char ip_str[INET_ADDRSTRLEN];
+	(void)inet_ntop(AF_INET, &((struct sockaddr_in *)sa)->sin_addr, ip_str, sizeof(ip_str));
+
+#ifdef __APPLE__
+	socklen_t sa_len = sa->sa_len;
+#else
+	socklen_t sa_len = sizeof(struct sockaddr_in);
+#endif /* __APPLE__ */
+
+	/**
+	 * Grace au rDNS (reverse DNS), on peut essayer de récupérer le nom
+	 * de l'hôte à partir de son adresse IP.
+	 */
+	if (getnameinfo(sa, sa_len, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf), NI_NAMEREQD) != 0)
+	{
+		(void)printf("%s (%s)", ip_str, ip_str);
+	}
+	else
+	{
+		(void)printf("%s (%s)", hbuf, ip_str);
+	}
+	(void)fflush(stdout);
 }
 
 static void
@@ -142,7 +160,8 @@ finish(void)
 		exit(2);
 }
 
-void pinger()
+void
+pinger()
 {
 	struct timeval now;
 	struct tv32 tv32;
@@ -186,7 +205,8 @@ void pinger()
 	ntransmitted++;
 }
 
-void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
+void
+receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 {
 	struct ip *ip;
 	struct icmp *icmp;
@@ -249,20 +269,27 @@ void receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 			return;
 		}
 
-		printf("%d bytes from %s: icmp_seq=%u", rcv, inet_ntoa(from->sin_addr), seq);
+		printf("%d bytes from ", rcv);
+		if (options & F_VERBOSE)
+			printrname((struct sockaddr *)from);
+		else
+			printf("%s", inet_ntoa(from->sin_addr));
+		printf(": icmp_seq=%u", seq);
 		printf(" ttl=%d", ip->ip_ttl);
 		printf(" time=%.3f ms\n", rtt);
 	}
 }
 
-void stop(int sig __unused)
+void
+stop(int sig __unused)
 {
 	if (finish_up)
 		_exit(nreceived ? 0 : 2);
 	finish_up = 1;
 }
 
-int main(int ac, char **av)
+int
+main(int ac, char **av)
 {
 	char	v;
 	char	*target, *ep;
@@ -470,7 +497,7 @@ int main(int ac, char **av)
 
 	while (!finish_up)
 	{
-		struct fd_set readfds;
+		fd_set readfds;
 		struct timeval now, timeout;
 		int n, rcv;
 
