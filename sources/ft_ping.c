@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/11/08 17:22:28 by mgama            ###   ########.fr       */
+/*   Updated: 2025/11/08 17:28:18 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -69,12 +69,14 @@ in_cksum(u_short *addr, int len)
 	sum = 0;
 	w = addr;
 
-	while (nleft > 1)  {
+	while (nleft > 1)
+	{
 		sum += *w++;
 		nleft -= 2;
 	}
 
-	if (nleft == 1) {
+	if (nleft == 1)
+	{
 		last.uc[0] = *(u_char *)w;
 		last.uc[1] = 0;
 		sum += last.us;
@@ -118,7 +120,8 @@ static void
 tvsub(struct timeval *out, const struct timeval *in)
 {
 
-	if ((out->tv_usec -= in->tv_usec) < 0) {
+	if ((out->tv_usec -= in->tv_usec) < 0)
+	{
 		--out->tv_sec;
 		out->tv_usec += 1000000;
 	}
@@ -136,22 +139,20 @@ finish(void)
 	(void)printf("--- %s ping statistics ---\n", hostname);
 	(void)printf("%ld packets transmitted, ", ntransmitted);
 	(void)printf("%ld packets received, ", nreceived);
-	if (ntransmitted) {
+	if (ntransmitted)
+	{
 		if (nreceived > ntransmitted)
 			(void)printf("-- somebody's printing up packets!");
 		else
-			(void)printf("%.1f%% packet loss",
-			    ((ntransmitted - nreceived) * 100.0) /
-			    ntransmitted);
+			(void)printf("%.1f%% packet loss", ((ntransmitted - nreceived) * 100.0) / ntransmitted);
 	}
 	(void)putchar('\n');
-	if (nreceived) {
+	if (nreceived)
+	{
 		double n = nreceived;
 		double avg = tsum / n;
 		double vari = tsumsq / n - avg * avg;
-		(void)printf(
-		    "round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n",
-		    tmin, avg, tmax, sqrt(vari));
+		(void)printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n", tmin, avg, tmax, sqrt(vari));
 	}
 
 	if (nreceived)
@@ -189,7 +190,8 @@ pinger()
 
 	icp->icmp_cksum = in_cksum((u_short *)icp, cc);
 
-	if (options & F_HDRINCL) {
+	if (options & F_HDRINCL)
+	{
 		cc += sizeof(struct ip);
 		ip = (struct ip *)outpackhdr;
 		ip->ip_len = cc;
@@ -197,7 +199,8 @@ pinger()
 		packet = outpackhdr;
 	}
 
-	if (sendto(sockfd, (char *)packet, cc, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
+	if (sendto(sockfd, (char *)packet, cc, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0)
+	{
 		perror("sendto");
 		return;
 	}
@@ -218,7 +221,8 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 	ip = (struct ip *)buff;
 	hlen = ip->ip_hl << 2;
 	recv_len = rcv;
-	if (rcv < hlen + ICMP_MINLEN) {
+	if (rcv < hlen + ICMP_MINLEN)
+	{
 		if (options & F_VERBOSE)
 			printf("packet too short (%d bytes) from %s\n", rcv, inet_ntoa(from->sin_addr));
 		return;
@@ -226,8 +230,10 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 
 	rcv -= hlen;
 	icmp = (struct icmp *)(buff + hlen);
-	if (icmp->icmp_type == ICMP_ECHOREPLY) {
-		if (icmp->icmp_id != ident) {
+	if (icmp->icmp_type == ICMP_ECHOREPLY)
+	{
+		if (icmp->icmp_id != ident)
+		{
 			if (options & F_VERBOSE)
 				printf("wrong identification %d from %s\n", ntohs(icmp->icmp_id), inet_ntoa(from->sin_addr));
 			return;
@@ -263,16 +269,19 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 		}
 
 		seq = ntohs(icmp->icmp_seq);
-		if (seq < ntransmitted - 1) {
+		if (seq < ntransmitted - 1)
+		{
 			if (options & F_VERBOSE)
 				printf("duplication %d from %s\n", seq, inet_ntoa(from->sin_addr));
 			return;
 		}
 
 		printf("%d bytes from ", rcv);
+#ifndef __APPLE_
 		if (options & F_VERBOSE)
 			printrname((struct sockaddr *)from);
 		else
+#endif /* __APPLE__ */
 			printf("%s", inet_ntoa(from->sin_addr));
 		printf(": icmp_seq=%u", seq);
 		printf(" ttl=%d", ip->ip_ttl);
@@ -316,9 +325,7 @@ main(int ac, char **av)
 		case 'c':
 			ultmp = strtoul(optarg, &ep, 0);
 			if (*ep || ep == optarg || ultmp > LONG_MAX || !ultmp)
-				errx(EX_USAGE,
-				    "invalid count of packets to transmit: `%s'",
-				    optarg);
+				errx(EX_USAGE, "invalid count of packets to transmit: `%s'", optarg);
 			npackets = ultmp;
 			break;
 		case 'd':
@@ -410,16 +417,19 @@ main(int ac, char **av)
 		(void)setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (char *)&hold,
 		    sizeof(hold));
 
-	if (options & F_TTL) {
-		if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl,
-		    sizeof(ttl)) < 0) {
+	if (options & F_TTL)
+	{
+		if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0)
+		{
 			err(EX_OSERR, "setsockopt IP_TTL");
 		}
 	}
 
-	if (options & F_HDRINCL) {
+	if (options & F_HDRINCL)
+	{
 		ip = (struct ip*)outpackhdr;
-		if (!(options & (F_TTL))) {
+		if (!(options & (F_TTL)))
+		{
 #ifdef __APPLE__
 			size_t sz = sizeof(ttl);
 			mib[0] = CTL_NET;
@@ -442,6 +452,7 @@ main(int ac, char **av)
 			fclose(f);		
 #endif /* __APPLE__ */
 		}
+
 		setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, &hold, sizeof(hold));
 		ip->ip_v = IPVERSION;
 		ip->ip_hl = sizeof(struct ip) >> 2;
@@ -503,19 +514,23 @@ main(int ac, char **av)
 
 		FD_ZERO(&readfds);
 		FD_SET(sockfd, &readfds);
+
 		(void)gettimeofday(&now, NULL);
 		timeout.tv_sec = last.tv_sec + intvl.tv_sec - now.tv_sec;
 		timeout.tv_usec = last.tv_usec + intvl.tv_usec - now.tv_usec;
-		while (timeout.tv_usec < 0) {
+		while (timeout.tv_usec < 0)
+		{
 			timeout.tv_usec += 1000000;
 			timeout.tv_sec--;
 		}
-		while (timeout.tv_usec >= 1000000) {
+		while (timeout.tv_usec >= 1000000)
+		{
 			timeout.tv_usec -= 1000000;
 			timeout.tv_sec++;
 		}
 		if (timeout.tv_sec < 0)
 			timeout.tv_sec = timeout.tv_usec = 0;
+
 		n = select(sockfd + 1, &readfds, NULL, NULL, &timeout);
 		if (n < 0)
 			continue;
@@ -544,7 +559,8 @@ main(int ac, char **av)
 			pinger();
 
 			(void)gettimeofday(&last, NULL);
-			if (ntransmitted - nreceived - 1 > nmissedmax) {
+			if (ntransmitted - nreceived - 1 > nmissedmax)
+			{
 				nmissedmax = ntransmitted - nreceived - 1;
 				printf("Request timeout for icmp_seq %ld\n", ntransmitted - 2);
 			}
