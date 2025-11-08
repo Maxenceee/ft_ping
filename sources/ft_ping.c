@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/11/08 17:28:18 by mgama            ###   ########.fr       */
+/*   Updated: 2025/11/08 17:32:07 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -278,11 +278,10 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 
 		printf("%d bytes from ", rcv);
 #ifndef __APPLE_
-		if (options & F_VERBOSE)
-			printrname((struct sockaddr *)from);
-		else
+		printrname((struct sockaddr *)from);
+#else
+		printf("%s", inet_ntoa(from->sin_addr));
 #endif /* __APPLE__ */
-			printf("%s", inet_ntoa(from->sin_addr));
 		printf(": icmp_seq=%u", seq);
 		printf(" ttl=%d", ip->ip_ttl);
 		printf(" time=%.3f ms\n", rtt);
