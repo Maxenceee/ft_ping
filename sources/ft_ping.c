@@ -6,15 +6,16 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/11/08 17:32:07 by mgama            ###   ########.fr       */
+/*   Updated: 2025/11/10 17:37:18 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ft_ping.h"
+#include "ft_getopt.h"
 
 int uid;
 int ident;
-int options;
+int flags;
 int sockfd;
 int interval = 1000; // 1 second
 char *hostname;
@@ -44,13 +45,18 @@ void
 usage(void)
 {
 	(void)fprintf(stderr, "Usage\n");
-	(void)fprintf(stderr, "  ft_ping [options] <destination>");
+	(void)fprintf(stderr, "  ft_ping [options] <destination>\n");
 	(void)fprintf(stderr, "Options:\n");
-	(void)fprintf(stderr, "  <destination>      dns name or ip address\n");
-	(void)fprintf(stderr, "  -c <count>         stop after <count> replies\n");
-	(void)fprintf(stderr, "  -h                 print help and exit\n");
-	(void)fprintf(stderr, "  -V                 print version and exit\n");
-	(void)fprintf(stderr, "  -v                 verbose output\n");
+	(void)fprintf(stderr, "  <destination>        dns name or ip address\n");
+	(void)fprintf(stderr, "  -c, --count <count>  stop after <count> replies\n");
+	(void)fprintf(stderr, "  -o, --once           stop after sending one packet\n");
+	(void)fprintf(stderr, "  -d, --debug          set the SO_DEBUG option on the socket\n");
+	(void)fprintf(stderr, "  -h, --help           print help and exit\n");
+	(void)fprintf(stderr, "  -t, --ttl <ttl>      set the IP Time to Live\n");
+	(void)fprintf(stderr, "  -T, --tos <tos>      set the IP Type of Service\n");
+	(void)fprintf(stderr, "  -h, --help           print help and exit\n");
+	(void)fprintf(stderr, "  -V, --version        print version and exit\n");
+	(void)fprintf(stderr, "  -v, --verbose        verbose output\n");
 	exit(64);
 }
 
@@ -107,7 +113,7 @@ printrname(struct sockaddr *sa)
 	 */
 	if (getnameinfo(sa, sa_len, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf), NI_NAMEREQD) != 0)
 	{
-		(void)printf("%s (%s)", ip_str, ip_str);
+		(void)printf("%s", ip_str);
 	}
 	else
 	{
@@ -190,7 +196,7 @@ pinger()
 
 	icp->icmp_cksum = in_cksum((u_short *)icp, cc);
 
-	if (options & F_HDRINCL)
+	if (flags & F_HDRINCL)
 	{
 		cc += sizeof(struct ip);
 		ip = (struct ip *)outpackhdr;
@@ -223,7 +229,7 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 	recv_len = rcv;
 	if (rcv < hlen + ICMP_MINLEN)
 	{
-		if (options & F_VERBOSE)
+		if (flags & F_VERBOSE)
 			printf("packet too short (%d bytes) from %s\n", rcv, inet_ntoa(from->sin_addr));
 		return;
 	}
@@ -234,7 +240,7 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 	{
 		if (icmp->icmp_id != ident)
 		{
-			if (options & F_VERBOSE)
+			if (flags & F_VERBOSE)
 				printf("wrong identification %d from %s\n", ntohs(icmp->icmp_id), inet_ntoa(from->sin_addr));
 			return;
 		}
@@ -271,20 +277,30 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 		seq = ntohs(icmp->icmp_seq);
 		if (seq < ntransmitted - 1)
 		{
-			if (options & F_VERBOSE)
+			if (flags & F_VERBOSE)
 				printf("duplication %d from %s\n", seq, inet_ntoa(from->sin_addr));
 			return;
 		}
 
 		printf("%d bytes from ", rcv);
-#ifndef __APPLE_
-		printrname((struct sockaddr *)from);
-#else
+// #ifndef __APPLE_
+// 		printrname((struct sockaddr *)from);
+// #else
 		printf("%s", inet_ntoa(from->sin_addr));
-#endif /* __APPLE__ */
+// #endif /* __APPLE__ */
 		printf(": icmp_seq=%u", seq);
 		printf(" ttl=%d", ip->ip_ttl);
 		printf(" time=%.3f ms\n", rtt);
+	}
+	if (icmp->icmp_type == ICMP_TIME_EXCEEDED)
+	{
+		++nreceived;
+		struct ip *inner_ip = (struct ip *)(icmp->icmp_data);
+		struct icmp *inner_icmp = (struct icmp *)((u_char *)inner_ip + (inner_ip->ip_hl << 2));
+
+		printf("%d bytes from ", rcv);
+		printrname((struct sockaddr *)from);
+		printf(": Time to live exceeded\n");
 	}
 }
 
@@ -299,7 +315,7 @@ stop(int sig __unused)
 int
 main(int ac, char **av)
 {
-	char	v;
+	char	ch;
 	char	*target, *ep;
 	int		hold, ttl, tos;
 #ifdef __APPLE__
@@ -316,52 +332,68 @@ main(int ac, char **av)
 	u_long ultmp;
 	u_char packet[IP_MAXPACKET] __attribute__((aligned(4)));
 
+	struct getopt_list_s optlist[] = {
+		{"count", 'c', OPTPARSE_REQUIRED},
+		{"help", '?', OPTPARSE_NONE},
+		{"debug", 'd', OPTPARSE_NONE},
+		{"ttl", 't', OPTPARSE_REQUIRED},
+		{"tos", 'T', OPTPARSE_REQUIRED},
+		{"once", 'o', OPTPARSE_NONE},
+		{"version", 'V', OPTPARSE_NONE},
+		{"verbose", 'v', OPTPARSE_NONE},
+		{0}
+	};
+	struct getopt_s options;
+
+	ft_getopt_init(&options, av);
+
 	outpack = outpackhdr + sizeof(struct ip);
-	while ((v = getopt(ac, av, "c:dhom:Vvz:")) !=  -1)
+	while ((ch = ft_getopt(&options, optlist, NULL)) != -1)
 	{
-		switch (v)
+		switch (ch)
 		{
 		case 'c':
-			ultmp = strtoul(optarg, &ep, 0);
-			if (*ep || ep == optarg || ultmp > LONG_MAX || !ultmp)
-				errx(EX_USAGE, "invalid count of packets to transmit: `%s'", optarg);
+			ultmp = strtoul(options.optarg, &ep, 0);
+			if (*ep || ep == options.optarg || ultmp > LONG_MAX || !ultmp)
+				errx(EX_USAGE, "invalid count of packets to transmit: `%s'", options.optarg);
 			npackets = ultmp;
 			break;
 		case 'd':
-			options |= F_SO_DEBUG;
+			flags |= F_SO_DEBUG;
 			break;
 		case 'o':
-			options |= F_ONCE;
+			flags |= F_ONCE;
 			break;
-		case 'm':
-			ultmp = strtoul(optarg, &ep, 0);
-			if (*ep || ep == optarg || ultmp > MAXTTL)
-				errx(EX_USAGE, "invalid TTL: `%s'", optarg);
+		case 't':
+			ultmp = strtoul(options.optarg, &ep, 0);
+			if (*ep || ep == options.optarg || ultmp > MAXTTL)
+				errx(EX_USAGE, "invalid TTL: `%s'", options.optarg);
 			ttl = ultmp;
-			options |= F_TTL;
+			flags |= F_TTL;
+			break;
+		case 'T':
+			flags |= F_HDRINCL;
+			ultmp = strtoul(options.optarg, &ep, 0);
+			if (*ep || ep == options.optarg || ultmp > MAXTOS)
+				errx(EX_USAGE, "invalid TOS: `%s'", options.optarg);
+			tos = ultmp;
 			break;
 		case 'V':
 			printf("ft_ping v%.1f\n", PG_VERSION);
 			exit(0);
 			break;
 		case 'v':
-			options |= F_VERBOSE;
+			flags |= F_VERBOSE;
 			break;
-		case 'z':
-			options |= F_HDRINCL;
-			ultmp = strtoul(optarg, &ep, 0);
-			if (*ep || ep == optarg || ultmp > MAXTOS)
-				errx(EX_USAGE, "invalid TOS: `%s'", optarg);
-			tos = ultmp;
-			break;
+		case '?':
 		default:
 			usage();
 		}
 	}
 
-	if (ac - optind != 1)
+	if (ac - options.optind != 1)
 		usage();
-	target = av[optind];
+	target = av[options.optind];
 
 	if (getuid())
 		sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
@@ -412,11 +444,11 @@ main(int ac, char **av)
 	if (uid == 0)
 		(void)setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (char *)&hold, sizeof(hold));
 
-	if (options & F_SO_DEBUG)
+	if (flags & F_SO_DEBUG)
 		(void)setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (char *)&hold,
 		    sizeof(hold));
 
-	if (options & F_TTL)
+	if (flags & F_TTL)
 	{
 		if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0)
 		{
@@ -424,10 +456,10 @@ main(int ac, char **av)
 		}
 	}
 
-	if (options & F_HDRINCL)
+	if (flags & F_HDRINCL)
 	{
 		ip = (struct ip*)outpackhdr;
-		if (!(options & (F_TTL)))
+		if (!(flags & (F_TTL)))
 		{
 #ifdef __APPLE__
 			size_t sz = sizeof(ttl);
@@ -466,7 +498,12 @@ main(int ac, char **av)
 
 	ident = getpid() & 0xFFFF;
 	
-	printf("FT_PING %s (%s): %d data bytes\n", hostname, inet_ntoa(target_addr.sin_addr), datalen);
+	printf("FT_PING %s (%s): %d data bytes", hostname, inet_ntoa(target_addr.sin_addr), datalen);
+	if (flags & F_VERBOSE)
+	{
+		printf(", id 0x%04x = %u", (unsigned)ident, (unsigned)ident);
+	}
+	printf("\n");
 
 	sigemptyset(&si_sa.sa_mask);
 	si_sa.sa_flags = 0;
@@ -550,7 +587,7 @@ main(int ac, char **av)
 				tv = &now;
 			}
 			receiver((char *)packet, rcv, &from, tv);
-			if ((options & F_ONCE && nreceived) || (npackets && nreceived >= npackets))
+			if ((flags & F_ONCE && nreceived) || (npackets && nreceived >= npackets))
 				break;
 		}
 		if (n == 0)
