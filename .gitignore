@@ -3,3 +3,4 @@
 *.dSYM
 ft_ping
 .objs
+Dockerfile

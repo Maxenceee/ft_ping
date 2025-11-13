@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:56 by mgama             #+#    #+#             */
-/*   Updated: 2025/10/20 15:08:21 by mgama            ###   ########.fr       */
+/*   Updated: 2025/11/13 18:00:29 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -55,10 +55,11 @@
 #define F_TIMESTAMP		0x0004
 #define	F_SO_DEBUG		0x0010
 #define	F_TTL			0x0100
-#define	F_ONCE			0x0200
-#define	F_HDRINCL		0x0400
+#define	F_TOS			0x0200
+#define	F_ONCE			0x0400
+#define	F_HDRINCL		0x0800
 
-#define PG_VERSION 1.0
+#define PG_VERSION 1.5
 
 #define MAXTOS 255
 

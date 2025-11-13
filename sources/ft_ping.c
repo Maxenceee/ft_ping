@@ -6,7 +6,7 @@
 /*   By: mgama <mgama@student.42lyon.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2024/07/16 16:27:58 by mgama             #+#    #+#             */
-/*   Updated: 2025/11/10 17:37:18 by mgama            ###   ########.fr       */
+/*   Updated: 2025/11/13 18:03:11 by mgama            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -40,6 +40,7 @@ struct tv32 {
 
 long ntransmitted = 0;
 long nreceived = 0;
+long nresponded = 0;
 
 void
 usage(void)
@@ -196,18 +197,9 @@ pinger()
 
 	icp->icmp_cksum = in_cksum((u_short *)icp, cc);
 
-	if (flags & F_HDRINCL)
-	{
-		cc += sizeof(struct ip);
-		ip = (struct ip *)outpackhdr;
-		ip->ip_len = cc;
-		ip->ip_sum = in_cksum((u_short *)outpackhdr, cc);
-		packet = outpackhdr;
-	}
-
 	if (sendto(sockfd, (char *)packet, cc, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0)
 	{
-		perror("sendto");
+		perror("ft_ping: sendto");
 		return;
 	}
 
@@ -245,6 +237,7 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 			return;
 		}
 		++nreceived;
+		++nresponded;
 		rtt = 0.0;
 
 		struct timeval tv1;
@@ -283,24 +276,50 @@ receiver(char *buff, int rcv, struct sockaddr_in *from, struct timeval *tv)
 		}
 
 		printf("%d bytes from ", rcv);
-// #ifndef __APPLE_
-// 		printrname((struct sockaddr *)from);
-// #else
 		printf("%s", inet_ntoa(from->sin_addr));
-// #endif /* __APPLE__ */
 		printf(": icmp_seq=%u", seq);
 		printf(" ttl=%d", ip->ip_ttl);
 		printf(" time=%.3f ms\n", rtt);
 	}
+
 	if (icmp->icmp_type == ICMP_TIME_EXCEEDED)
 	{
-		++nreceived;
-		struct ip *inner_ip = (struct ip *)(icmp->icmp_data);
-		struct icmp *inner_icmp = (struct icmp *)((u_char *)inner_ip + (inner_ip->ip_hl << 2));
+		struct ip *inner_ip;
+		struct icmp *inner_icmp;
+		int inner_hlen;
+		int inner_seq;
+		u_char *inner_ptr = icmp->icmp_data;
 
-		printf("%d bytes from ", rcv);
-		printrname((struct sockaddr *)from);
-		printf(": Time to live exceeded\n");
+		++nresponded;
+
+		if (recv_len - hlen < (int)sizeof(struct ip))
+		{
+			if (flags & F_VERBOSE)
+				printf("time exceeded but packet too short for inner IP from %s\n", inet_ntoa(from->sin_addr));
+			return;
+		}
+
+		inner_ip = (struct ip *)inner_ptr;
+		inner_hlen = inner_ip->ip_hl << 2;
+
+		if (recv_len - hlen < inner_hlen + ICMP_MINLEN)
+		{
+			if (flags & F_VERBOSE)
+				printf("time exceeded but inner packet too short from %s\n", inet_ntoa(from->sin_addr));
+			return;
+		}
+
+		inner_icmp = (struct icmp *)((u_char *)inner_ip + inner_hlen);
+
+		if (inner_icmp->icmp_type == ICMP_ECHO && inner_icmp->icmp_id == ident)
+		{
+			inner_seq = ntohs(inner_icmp->icmp_seq);
+			printf("%d bytes from ", recv_len);
+			printrname((struct sockaddr *)from);
+			printf(": icmp_seq=%d ", inner_seq);
+			printf("Time to live exceeded\n");
+		}
+		return;
 	}
 }
 
@@ -372,14 +391,14 @@ main(int ac, char **av)
 			flags |= F_TTL;
 			break;
 		case 'T':
-			flags |= F_HDRINCL;
 			ultmp = strtoul(options.optarg, &ep, 0);
 			if (*ep || ep == options.optarg || ultmp > MAXTOS)
 				errx(EX_USAGE, "invalid TOS: `%s'", options.optarg);
 			tos = ultmp;
+			flags |= F_TOS;
 			break;
 		case 'V':
-			printf("ft_ping v%.1f\n", PG_VERSION);
+			printf("ft_ping v%.1f - mgama\n", PG_VERSION);
 			exit(0);
 			break;
 		case 'v':
@@ -401,13 +420,13 @@ main(int ac, char **av)
 		sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 	if (sockfd < 0)
 	{
-		perror("socket");
+		perror("ft_ping: socket");
 		exit(1);
 	}
 
 	if (setuid(getuid()) != 0)
 	{
-		perror("setuid");
+		perror("ft_ping: setuid");
 		exit(1);
 	}
 	uid = getuid();
@@ -427,13 +446,12 @@ main(int ac, char **av)
 		hosts = gethostbyname2(target, AF_INET);
 		if (hosts == NULL)
 		{
-			perror("gethostbyname2");
+			herror("ft_ping: gethostbyname2");
 			exit(1);
 		}
 		if ((unsigned)hosts->h_length > sizeof(to->sin_addr))
 		{
-			fprintf(stderr, "gethostbyname2: address too long\n");
-			exit(1);
+			err(EX_DATAERR, "ft_ping: gethostbyname2: address too long\n");
 		}
 		memcpy(&to->sin_addr, hosts->h_addr, sizeof(to->sin_addr));
 		hostname = hosts->h_name;
@@ -456,45 +474,13 @@ main(int ac, char **av)
 		}
 	}
 
-	if (flags & F_HDRINCL)
+	if (flags & F_TOS)
 	{
-		ip = (struct ip*)outpackhdr;
-		if (!(flags & (F_TTL)))
+		if (setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0)
 		{
-#ifdef __APPLE__
-			size_t sz = sizeof(ttl);
-			mib[0] = CTL_NET;
-			mib[1] = PF_INET;
-			mib[2] = IPPROTO_IP;
-			mib[3] = IPCTL_DEFTTL;
-
-			if (sysctl(mib, 4, &ttl, &sz, NULL, 0) == -1)
-				err(1, "sysctl(net.inet.ip.ttl)");
-#else
-			FILE *f = fopen("/proc/sys/net/ipv4/ip_default_ttl", "r");
-			if (!f)
-				err(1, "fopen(/proc/sys/net/ipv4/ip_default_ttl)");
-
-			if (fscanf(f, "%d", &ttl) != 1) {
-				fclose(f);
-				err(1, "fscanf(/proc/sys/net/ipv4/ip_default_ttl)");
-			}
-
-			fclose(f);		
-#endif /* __APPLE__ */
+			err(EX_OSERR, "setsockopt IP_TOS");
 		}
-
-		setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, &hold, sizeof(hold));
-		ip->ip_v = IPVERSION;
-		ip->ip_hl = sizeof(struct ip) >> 2;
-		ip->ip_tos = tos;
-		ip->ip_id = 0;
-		ip->ip_off = IP_DF;
-		ip->ip_ttl = ttl;
-		ip->ip_p = IPPROTO_ICMP;
-		ip->ip_src.s_addr = INADDR_ANY;
-		ip->ip_dst = to->sin_addr;
-    }
+	}
 
 	ident = getpid() & 0xFFFF;
 	
@@ -511,21 +497,21 @@ main(int ac, char **av)
 	si_sa.sa_handler = stop;
 	if (sigaction(SIGINT, &si_sa, NULL) < 0)
 	{
-		perror("sigaction");
+		perror("ft_ping: sigaction");
 		exit(1);
 	}
 
 	si_sa.sa_handler = stop;
 	if (sigaction(SIGQUIT, &si_sa, NULL) < 0)
 	{
-		perror("sigaction");
+		perror("ft_ping: sigaction");
 		exit(1);
 	}
 
 	si_sa.sa_handler = stop;
 	if (sigaction(SIGALRM, &si_sa, NULL) < 0)
 	{
-		perror("sigaction");
+		perror("ft_ping: sigaction");
 		exit(1);
 	}
 
@@ -579,7 +565,7 @@ main(int ac, char **av)
 			{
 				if (errno == EINTR)
 					continue;
-				perror("recvmsg");
+				perror("ft_ping: recvmsg");
 				continue;
 			}
 			if (tv == NULL) {
@@ -595,7 +581,7 @@ main(int ac, char **av)
 			pinger();
 
 			(void)gettimeofday(&last, NULL);
-			if (ntransmitted - nreceived - 1 > nmissedmax)
+			if (ntransmitted - nresponded - 1 > nmissedmax)
 			{
 				nmissedmax = ntransmitted - nreceived - 1;
 				printf("Request timeout for icmp_seq %ld\n", ntransmitted - 2);
